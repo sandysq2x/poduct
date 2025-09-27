@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Smart Meter Dashboard</title>
+<style>
+  body {
+    margin:0;
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg,#1e3a8a,#0f766e);
+    color:white;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:20px;
+  }
+  header {
+    width:100%;
+    max-width:900px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:20px;
+  }
+  header h1 { margin:0; font-size:22px; }
+  header button {
+    background:#dc2626;
+    border:none;
+    padding:10px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    color:white;
+    font-size:15px;
+  }
+  .total-box {
+    margin-top:8px;
+    font-size:16px;
+    font-weight:bold;
+    color:#facc15;
+  }
+  .container {
+    width:100%;
+    max-width:900px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:16px;
+  }
+  .appliance-card, .create-card {
+    background:rgba(0,0,0,0.3);
+    border-radius:12px;
+    padding:20px;
+    flex:0 0 calc(33.33% - 16px);
+    text-align:center;
+    cursor:pointer;
+    box-shadow:0 4px 10px rgba(0,0,0,0.3);
+    position:relative;
+  }
+  .appliance-card h3 { margin:0; font-size:18px; }
+  .appliance-card p { margin:6px 0 0; font-size:14px; color:#ddd; }
+  .create-card { display:flex; align-items:center; justify-content:center; font-weight:bold; }
+  .status-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; }
+  .modal {
+    display:none;
+    position:fixed;
+    z-index:1000;
+    left:0;
+    top:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.6);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .limit-btn {
+    background:#facc15;
+    color:#000;
+    border:none;
+    padding:8px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:bold;
+    margin-left:10px;
+  }
+  .limit-btn:hover { background:#eab308; }
+  .modal-content {
+    background:#1e293b;
+    padding:24px;
+    border-radius:12px;
+    width:100%;
+    max-width:400px;
+    color:white;
+  }
+  .modal-content h2 { margin-top:0; }
+  .modal-content input, .modal-content select {
+    width:100%;
+    padding:10px;
+    margin:10px 0;
+    border:none;
+    border-radius:8px;
+  }
+  .modal-content button {
+    margin-top:10px;
+    padding:10px 16px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .btn-save { background:#10b981; color:white; }
+  .btn-cancel { background:#dc2626; color:white; margin-left:8px; }
+  .toggle-btn {
+    margin-top:10px;
+    padding:8px 12px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+    background:#3b82f6;
+    color:white;
+  }
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 28px;
+    margin-left:10px;
+  }
+  .switch input { display: none; }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top:0; left:0; right:0; bottom:0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 28px;
+  }
+  .slider:before {
+    position: absolute;
+    content:"";
+    height: 22px;
+    width: 22px;
+    left: 3px;
+    bottom: 3px;
+    background:white;
+    transition:.4s;
+    border-radius:50%;
+  }
+  input:checked + .slider { background-color: #10b981; }
+  input:checked + .slider:before { transform: translateX(22px); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1 id="welcomeMsg">Welcome!</h1>
+    <div class="total-box">Total Units: <span id="totalUnits">0.000</span> kWh</div>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:10px;">
+    <button class="limit-btn" id="limitSetupBtn">Limit Setup</button>
+    <label class="switch">
+      <input type="checkbox" id="limitToggle">
+      <span class="slider"></span>
+    </label>
+    <button class="limit-btn" id="paymentBtn" style="background:#3b82f6; color:white;">Payment</button>
+    <button class="limit-btn" id="dataBtn" style="background:#0ea5e9; color:white;">User Data</button>
+    <button class="limit-btn" id="timerBtn" style="background:#f97316; color:white;">Timer</button> <!-- NEW TIMER BUTTON -->
+  </div>
+
+  <button id="logoutBtn">Logout</button>
+</header>
+
+<div class="container" id="applianceContainer">
+  <div class="create-card" id="createApplianceBtn">+ Create Appliance</div>
+</div>
+
+<div class="modal" id="applianceModal">
+  <div class="modal-content">
+    <h2 id="modalTitle">Create Appliance</h2>
+    <input type="text" id="applianceName" placeholder="Enter Appliance Name"/>
+    <select id="relaySelect">
+      <option value="">Select Relay</option>
+      <option value="relay1">Relay 1</option>
+      <option value="relay2">Relay 2</option>
+      <option value="relay3">Relay 3</option>
+      <option value="relay4">Relay 4</option>
+      <option value="relay5">Relay 5</option>
+      <option value="relay6">Relay 6</option>
+    </select>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <button class="btn-save" id="saveApplianceBtn">Save</button>
+      <button class="btn-cancel" id="cancelApplianceBtn">Cancel</button>
+      <button class="toggle-btn" id="deleteApplianceBtn" style="background:#ef4444;">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-app.js";
+import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-auth.js";
+import { getDatabase, ref, set, onValue, get, remove } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBKymhtFhKq9PDQnBetwcqgwpHSG8CZ26E",
+  authDomain: "prasactronics-b28eb.firebaseapp.com",
+  databaseURL: "https://prasactronics-b28eb-default-rtdb.firebaseio.com",
+  projectId: "prasactronics-b28eb",
+  storageBucket: "prasactronics-b28eb.firebasestorage.app",
+  messagingSenderId: "1022798223455",
+  appId: "1:1022798223455:web:d26fb82f59cf3ac318a3ea",
+  measurementId: "G-7ESX735R8F"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+const welcomeMsg = document.getElementById("welcomeMsg");
+const logoutBtn = document.getElementById("logoutBtn");
+const applianceContainer = document.getElementById("applianceContainer");
+const modal = document.getElementById("applianceModal");
+const saveBtn = document.getElementById("saveApplianceBtn");
+const cancelBtn = document.getElementById("cancelApplianceBtn");
+const deleteBtn = document.getElementById("deleteApplianceBtn");
+const applianceName = document.getElementById("applianceName");
+const relaySelect = document.getElementById("relaySelect");
+const modalTitle = document.getElementById("modalTitle");
+const totalUnitsSpan = document.getElementById("totalUnits");
+const limitToggle = document.getElementById("limitToggle");
+const timerBtn = document.getElementById("timerBtn"); // NEW TIMER BUTTON ELEMENT
+
+let currentUser = null;
+let totalUnits = 0;
+let lastUpdate = Date.now();
+let appliancesData = {};
+let limitValue = null;
+let priorityRelay = [];
+let limitEnabled = true;
+let editingAppliance = null;
+const relayPower = { relay1:23, relay2:42, relay3:30, relay4:15, relay5:10, relay6:5 };
+// Load appliances
+function loadAppliances(uid){
+  const dbRef = ref(db,"users/"+uid+"/appliances");
+  onValue(dbRef,(snapshot)=>{
+    applianceContainer.innerHTML = `<div class="create-card" id="createApplianceBtn">+ Create Appliance</div>`;
+    appliancesData = snapshot.exists()?snapshot.val():{};
+    Object.values(appliancesData).forEach(renderAppliance);
+    document.getElementById("createApplianceBtn").addEventListener("click",()=>{ 
+      modalTitle.textContent="Create Appliance"; applianceName.value=""; relaySelect.value=""; editingAppliance=null; deleteBtn.style.display="none"; modal.style.display="flex"; 
+    });
+  });
+}
+
+// Render appliance
+function renderAppliance(appl){
+  const card=document.createElement("div");
+  card.className="appliance-card";
+  const dotColor=appl.status==="on"?"green":"red";
+  card.innerHTML=`
+    <h3><span class="status-dot" style="background:${dotColor}"></span>${appl.name}</h3>
+    <p>Relay: <b id="relay-${appl.relay}">${appl.relay}</b></p>
+    <p>Status: <b id="status-${appl.relay}">${appl.status||"off"}</b></p>
+    <p>Consumption: <b id="cons-${appl.relay}">${appl.consumption||0} W</b></p>
+    <p>Runtime: <b id="runtime-${appl.relay}">${formatRuntime(appl.runtime||0)}</b></p>
+    <p>Total kWh: <b id="totalKwh-${appl.relay}">${(appl.totalKwh||0).toFixed(3)}</b></p>
+    <button class="toggle-btn" id="btn-${appl.relay}">${appl.status==="on"?"Turn OFF":"Turn ON"}</button>
+    <button class="toggle-btn" style="background:#f59e0b; margin-left:5px;" id="settings-${appl.relay}">Settings</button>
+  `;
+  applianceContainer.appendChild(card);
+
+  document.getElementById(`btn-${appl.relay}`).addEventListener("click", async ()=>{
+    appl.status=appl.status==="on"?"off":"on";
+    appl.consumption=appl.status==="on"?relayPower[appl.relay]||0:0;
+    await set(ref(db,"users/"+currentUser.uid+"/appliances/"+appl.relay),appl);
+  });
+
+  document.getElementById(`settings-${appl.relay}`).addEventListener("click",()=>{
+    editingAppliance=appl;
+    modalTitle.textContent="Edit Appliance";
+    applianceName.value=appl.name;
+    relaySelect.value=appl.relay;
+    deleteBtn.style.display="inline-block";
+    modal.style.display="flex";
+  });
+}
+
+// Format runtime (minutes to H:M)
+function formatRuntime(minutes){
+  const h=Math.floor(minutes/60); const m=Math.floor(minutes%60);
+  return `${h}h ${m}m`;
+}
+
+// Save appliance
+saveBtn.addEventListener("click", async ()=>{
+  if(!applianceName.value||!relaySelect.value){ alert("Fill all fields"); return; }
+  const assigned=Object.values(appliancesData)
+    .filter(a=>!editingAppliance||a.relay!==editingAppliance.relay)
+    .map(a=>a.relay);
+  if(assigned.includes(relaySelect.value)){ alert("Relay already assigned!"); return; }
+  const data={ name:applianceName.value, relay:relaySelect.value, status:editingAppliance?editingAppliance.status:"off", consumption:editingAppliance?editingAppliance.consumption:0, runtime:editingAppliance?editingAppliance.runtime:0, totalKwh:editingAppliance?editingAppliance.totalKwh:0 };
+  const path="users/"+currentUser.uid+"/appliances/"+relaySelect.value;
+  if(editingAppliance&&editingAppliance.relay!==relaySelect.value) await remove(ref(db,"users/"+currentUser.uid+"/appliances/"+editingAppliance.relay));
+  await set(ref(db,path),data); modal.style.display="none"; applianceName.value=""; relaySelect.value=""; editingAppliance=null;
+});
+
+// Delete appliance
+deleteBtn.addEventListener("click", async ()=>{
+  if(editingAppliance&&confirm("Delete appliance?")){
+    await remove(ref(db,"users/"+currentUser.uid+"/appliances/"+editingAppliance.relay));
+    modal.style.display="none"; editingAppliance=null;
+  }
+});
+
+// Cancel modal
+cancelBtn.addEventListener("click", ()=>{ modal.style.display="none"; applianceName.value=""; relaySelect.value=""; editingAppliance=null; });
+
+// Energy tracking
+function startEnergyTracking(uid){
+  const limitRef=ref(db,"users/"+uid+"/limitConfig");
+  onValue(limitRef,(snap)=>{
+    if(snap.exists()){
+      const cfg=snap.val();
+      limitValue=cfg.limit;
+      priorityRelay=Array.isArray(cfg.priority)?cfg.priority:[];
+      limitEnabled=cfg.enabled!==false;
+      limitToggle.checked=limitEnabled;
+    }
+  });
+
+  get(ref(db,"users/"+uid+"/totalUnits")).then(snap=>{
+    if(snap.exists()){ totalUnits=parseFloat(snap.val()); totalUnitsSpan.textContent=totalUnits.toFixed(3); }
+  });
+
+  setInterval(async ()=>{
+    if(!appliancesData) return;
+    const now=Date.now(); const elapsed=(now-lastUpdate)/(1000*60); // elapsed in minutes
+    lastUpdate=now;
+    let totalPowerW=0;
+
+    for(const relayId in appliancesData){
+      const appl=appliancesData[relayId];
+      if(!appl) continue;
+      const p=parseFloat(appl.consumption||0);
+      if(appl.status==="on"&&!isNaN(p)){
+        totalPowerW+=p;
+        appl.runtime=(parseFloat(appl.runtime)||0)+elapsed;
+        appl.totalKwh=(parseFloat(appl.totalKwh)||0)+(p*elapsed/60/1000); // kWh
+        appl.lastUpdateTime=now;
+        document.getElementById(`runtime-${appl.relay}`).textContent=formatRuntime(appl.runtime);
+        document.getElementById(`totalKwh-${appl.relay}`).textContent=appl.totalKwh.toFixed(3);
+        await set(ref(db,"users/"+uid+"/appliances/"+relayId),appl);
+      }
+    }
+
+    const energyKWh=(totalPowerW*elapsed/60)/1000;
+    if(energyKWh>0){ totalUnits+=energyKWh; await set(ref(db,"users/"+uid+"/totalUnits"),totalUnits.toFixed(3)); totalUnitsSpan.textContent=totalUnits.toFixed(3); }
+
+    if(limitEnabled&&limitValue&&totalUnits>=limitValue){
+      for(const relayId in appliancesData){
+        const appliance=appliancesData[relayId];
+        if(appliance&&!priorityRelay.includes(appliance.relay)&&appliance.status==="on"){
+          appliance.status="off"; appliance.consumption=0;
+          await set(ref(db,"users/"+uid+"/appliances/"+relayId),appliance);
+        }
+      }
+      if(priorityRelay.length>0) alert("⚠️ Limit reached! Relays OFF except: "+priorityRelay.join(", "));
+    }
+  },5000);
+}
+
+// Limit toggle
+limitToggle.addEventListener("change", async ()=>{
+  limitEnabled=limitToggle.checked;
+  if(currentUser) await set(ref(db,"users/"+currentUser.uid+"/limitConfig/enabled"),limitEnabled);
+  alert("Limit "+(limitEnabled?"enabled":"disabled"));
+});
+
+// Auth
+onAuthStateChanged(auth,(user)=>{
+  if(user){ currentUser=user; welcomeMsg.textContent="Welcome, "+(user.displayName||user.email); loadAppliances(user.uid); startEnergyTracking(user.uid); }
+  else window.location.href="signin.html";
+});
+
+// Logout
+logoutBtn.addEventListener("click", async ()=>{ await signOut(auth); window.location.href="signin.html"; });
+
+// Navigation
+document.getElementById("limitSetupBtn").addEventListener("click", ()=>{ window.location.href="limit.html"; });
+document.getElementById("paymentBtn").addEventListener("click", ()=>{ window.location.href="payment.html"; });
+document.getElementById("dataBtn").addEventListener("click", ()=>{ window.location.href="data.html"; });
+timerBtn.addEventListener("click", ()=>{ window.location.href="timer.html"; });
+</script>
+</body>
+</html>

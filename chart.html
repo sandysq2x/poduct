@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prasactronics Professional Dashboard</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+/* Body & Theme */
+body {
+  font-family: "Segoe UI", sans-serif;
+  margin:0;
+  background:#0f0f1e;
+  color:#eee;
+  transition: all 0.3s;
+}
+body.light { background:#f5f6fa; color:#333; }
+h1 { text-align:center; margin:20px 0; font-size:2rem; text-shadow:0 0 10px #00f;}
+#toggleTheme {
+  position: fixed; top: 20px; right:20px;
+  padding:8px 12px; border:none; border-radius:8px; cursor:pointer;
+  background:#00f;color:#fff;box-shadow:0 0 10px #00f;
+  transition: all 0.3s;
+}
+body.light #toggleTheme { background:#333;color:#fff;box-shadow:none;}
+.dashboard {
+  display:grid; grid-template-columns: repeat(auto-fit, minmax(320px,1fr));
+  gap:20px; padding:20px;
+}
+.chart-card {
+  background:linear-gradient(145deg,#1b1b2f,#13132a);
+  padding:15px; border-radius:16px; box-shadow:0 0 20px #00f7;
+  position:relative; cursor:pointer; transition: transform 0.3s, box-shadow 0.3s;
+}
+.chart-card:hover { transform: scale(1.05); box-shadow:0 0 30px #00f;}
+body.light .chart-card { background:#fff; color:#333; box-shadow:0 4px 15px rgba(0,0,0,0.1);}
+.status-indicator {
+  position:absolute; top:15px; right:15px;
+  width:18px; height:18px; border-radius:50%;
+  border:2px solid #fff; box-shadow:0 0 5px #00f;
+}
+.relay-values { margin-bottom:10px; font-size:14px;}
+.export-btn {
+  padding:6px 12px; border:none; border-radius:6px;
+  background:#00f;color:#fff; cursor:pointer; margin-top:5px;
+  font-size:12px; transition:all 0.3s;
+}
+.export-btn:hover { background:#0077ff; }
+.modal {
+  display:none; position:fixed; top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,0.8); justify-content:center; align-items:center;
+  z-index:1000;
+}
+.modal-content {
+  background:#1b1b2f; padding:20px; border-radius:16px; width:90%; max-width:900px; position:relative;
+  color:#fff;
+}
+.close-btn {
+  position:absolute; top:10px; right:15px; font-size:24px; cursor:pointer;
+}
+
+/* Total Box */
+.total-box {
+  background: linear-gradient(145deg,#2a2a40,#1f1f33);
+  padding:20px; border-radius:16px; text-align:center; margin-bottom:20px;
+  box-shadow:0 0 25px #0ff;
+}
+.total-box h2 { margin:0 0 10px 0; font-size:1.5rem; text-shadow:0 0 8px #0ff;}
+.total-box p { margin:0; font-size:1.2rem; }
+
+/* Dark/Light adjustments */
+body.light .modal-content { background:#fff; color:#333; }
+body.light .total-box { background:#f1f1f1; color:#333; box-shadow:0 0 15px #00f3; }
+</style>
+</head>
+<body>
+<h1>Prasactronics Energy Dashboard</h1>
+<button id="toggleTheme">Toggle Theme</button>
+
+<div class="total-box" id="totalBox">
+  <h2>Total Energy Usage</h2>
+  <p id="totalKwh">0 kWh</p>
+  <canvas id="totalChart" width="800" height="250"></canvas>
+  <button class="export-btn" id="exportTotal">Export Total CSV</button>
+</div>
+
+<div class="dashboard" id="dashboard"></div>
+
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <span class="close-btn" id="closeBtn">&times;</span>
+    <canvas id="modalChart" width="800" height="400"></canvas>
+  </div>
+</div>
+
+<script>
+// Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyBKymhtFhKq9PDQnBetwcqgwpHSG8CZ26E",
+  authDomain: "prasactronics-b28eb.firebaseapp.com",
+  databaseURL: "https://prasactronics-b28eb-default-rtdb.firebaseio.com",
+  projectId: "prasactronics-b28eb",
+  storageBucket: "prasactronics-b28eb.appspot.com",
+  messagingSenderId: "934870768233",
+  appId: "1:934870768233:web:51cf5462b478c8973ec9e7",
+  measurementId: "G-J1MS1Y6H1V"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const userId = 'GD6MZ4ox38WCWntNXdXRcCyK6212';
+const relays = ['relay1','relay2','relay3','relay4','relay5','relay6'];
+const MAX_POINTS = 100;
+
+let charts = {};
+let modalChart;
+let totalChart;
+const dashboard = document.getElementById('dashboard');
+const modal = document.getElementById('modal');
+const closeBtn = document.getElementById('closeBtn');
+const toggleTheme = document.getElementById('toggleTheme');
+const totalBox = document.getElementById('totalBox');
+const totalKwhEl = document.getElementById('totalKwh');
+
+// Dark/light
+toggleTheme.onclick = ()=>{
+  document.body.classList.toggle('light');
+};
+
+// Utility
+function formatRuntime(runtimeMinutes){
+  const hours = Math.floor(runtimeMinutes / 60);
+  const minutes = Math.floor(runtimeMinutes % 60);
+  return `${hours}h ${minutes}m`;
+}
+
+// Export CSV
+function exportCSV(relay){
+  const data = charts[relay].data;
+  let csv = 'Time,Total kWh,Runtime (min)\n';
+  for(let i=0;i<data.labels.length;i++){
+    csv += `${data.labels[i]},${data.datasets[0].data[i]},${data.datasets[1].data[i]}\n`;
+  }
+  const blob = new Blob([csv], {type:'text/csv'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${relay}_data.csv`;
+  link.click();
+}
+
+// Export total CSV
+document.getElementById('exportTotal').onclick = ()=>{
+  if(!totalChart) return;
+  let csv = 'Time,Total kWh\n';
+  const data = totalChart.data;
+  for(let i=0;i<data.labels.length;i++){
+    csv += `${data.labels[i]},${data.datasets[0].data[i]}\n`;
+  }
+  const blob = new Blob([csv],{type:'text/csv'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'total_data.csv';
+  link.click();
+}
+
+// Modal logic
+closeBtn.onclick = ()=>modal.style.display='none';
+window.onclick = e => { if(e.target==modal) modal.style.display='none'; }
+
+function openModal(relay){
+  modal.style.display='flex';
+  const ctx = document.getElementById('modalChart').getContext('2d');
+  if(modalChart) modalChart.destroy();
+  modalChart = new Chart(ctx,{
+    type:'line',
+    data: JSON.parse(JSON.stringify(charts[relay].data)),
+    options:{
+      responsive:true,
+      plugins:{ title:{display:true,text:relay+' (Maximized)'} },
+      scales: charts[relay].options.scales
+    }
+  });
+}
+
+// Create relay cards
+relays.forEach(relay=>{
+  const div = document.createElement('div');
+  div.className='chart-card';
+  div.innerHTML=`
+    <h3>${relay}</h3>
+    <div class="status-indicator" id="${relay}Status"></div>
+    <div class="relay-values" id="${relay}Values">0 kWh / 0h 0m</div>
+    <canvas id="${relay}Chart" width="400" height="200"></canvas>
+    <button class="export-btn" onclick="exportCSV('${relay}')">Export CSV</button>
+  `;
+  dashboard.appendChild(div);
+
+  const ctx = document.getElementById(`${relay}Chart`).getContext('2d');
+  charts[relay] = new Chart(ctx,{
+    type:'line',
+    data:{labels:[],datasets:[
+      {label:'Total kWh',data:[],borderColor:`hsl(${Math.random()*360},70%,50%)`,fill:false,tension:0.3},
+      {label:'Runtime (min)',data:[],borderColor:`hsl(${Math.random()*360},70%,70%)`,fill:false,tension:0.3,yAxisID:'y1'}
+    ]},
+    options:{
+      responsive:true,
+      plugins:{title:{display:true,text:relay}},
+      scales:{
+        x:{title:{display:true,text:'Time'}},
+        y:{title:{display:true,text:'Total kWh'}},
+        y1:{title:{display:true,text:'Runtime (min)'},position:'right',grid:{drawOnChartArea:false}}
+      }
+    }
+  });
+
+  div.addEventListener('click',()=>openModal(relay));
+});
+
+// Total Chart
+const ctxTotal = document.getElementById('totalChart').getContext('2d');
+totalChart = new Chart(ctxTotal,{
+  type:'line',
+  data:{labels:[],datasets:[{label:'Total kWh',data:[],borderColor:'#0ff',fill:false,tension:0.3}]},
+  options:{responsive:true,plugins:{title:{display:true,text:'Total Energy Usage'}},scales:{x:{title:{display:true,text:'Time'}},y:{title:{display:true,text:'Total kWh'}}}}
+});
+
+// Fetch and update data
+async function fetchData(){
+  try{
+    const snapshot = await db.ref(`users/${userId}/appliances`).once('value');
+    const data = snapshot.val();
+    let totalKwh=0;
+    const timeNow = new Date().toLocaleTimeString();
+    relays.forEach(relay=>{
+      const chart = charts[relay];
+      const statusIndicator = document.getElementById(`${relay}Status`);
+      const valuesDiv = document.getElementById(`${relay}Values`);
+      let latest={totalKwh:0,runtime:0,status:'off',lastUpdateTime:Date.now()};
+      if(data && data[relay]) latest = Object.values(data[relay]).reduce((a,b)=>a.lastUpdateTime>b.lastUpdateTime?a:b,latest);
+      const total = parseFloat(latest.totalKwh).toFixed(3);
+      const runtime = parseFloat(latest.runtime);
+      totalKwh+=parseFloat(total);
+
+      chart.data.labels.push(timeNow);
+      chart.data.datasets[0].data.push(total);
+      chart.data.datasets[1].data.push(runtime);
+      if(chart.data.labels.length>MAX_POINTS){
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+        chart.data.datasets[1].data.shift();
+      }
+      statusIndicator.style.background = latest.status==='on'?'lime':'red';
+      valuesDiv.textContent=`${total} kWh / ${formatRuntime(runtime)}`;
+      chart.update();
+    });
+
+    // Update total chart
+    totalChart.data.labels.push(timeNow);
+    totalChart.data.datasets[0].data.push(totalKwh.toFixed(3));
+    if(totalChart.data.labels.length>MAX_POINTS){
+      totalChart.data.labels.shift();
+      totalChart.data.datasets[0].data.shift();
+    }
+    totalChart.update();
+    totalKwhEl.textContent = totalKwh.toFixed(3)+' kWh';
+
+  }catch(err){ console.error(err); }
+}
+
+fetchData();
+setInterval(fetchData,5000);
+</script>
+</body>
+</html>

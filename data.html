@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User Data</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: #38bdf8;
+    }
+    table {
+      width: 90%;
+      max-width: 900px;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 12px;
+      border: 1px solid #475569;
+      text-align: center;
+    }
+    th {
+      background: #1e293b;
+    }
+    tr:nth-child(even) {
+      background: #334155;
+    }
+    button {
+      padding: 6px 12px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>User Appliance Data</h1>
+
+  <table id="dataTable">
+    <tr>
+      <th>Relay</th>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Consumption (W)</th>
+      <th>Total kWh</th>
+      <th>Runtime (mins)</th>
+      <th>Visual</th>
+    </tr>
+  </table>
+
+  <button onclick="window.location.href='welcome.html'">Back to Dashboard</button>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-auth.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBKymhtFhKq9PDQnBetwcqgwpHSG8CZ26E",
+      authDomain: "prasactronics-b28eb.firebaseapp.com",
+      databaseURL: "https://prasactronics-b28eb-default-rtdb.firebaseio.com",
+      projectId: "prasactronics-b28eb",
+      storageBucket: "prasactronics-b28eb.appspot.com",
+      messagingSenderId: "934870768233",
+      appId: "1:934870768233:web:51cf5462b478c8973ec9e7",
+      measurementId: "G-J1MS1Y6H1V"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+
+    const table = document.getElementById("dataTable");
+
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        window.location.href = "signin.html";
+        return;
+      }
+
+      const appliancesRef = ref(db, "users/" + user.uid + "/appliances");
+      onValue(appliancesRef, (snapshot) => {
+        // Clear old rows except header
+        table.innerHTML = `
+          <tr>
+            <th>Relay</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Consumption (W)</th>
+            <th>Total kWh</th>
+            <th>Runtime (mins)</th>
+            <th>Visual</th>
+          </tr>
+        `;
+
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          Object.keys(data).forEach((relayId) => {
+            const item = data[relayId];
+            const row = document.createElement("tr");
+
+            // Create visual button
+            const visualBtn = document.createElement("button");
+            visualBtn.textContent = "Visual";
+            visualBtn.addEventListener("click", () => {
+              // Redirect to chart.html with relay ID as query param
+              window.location.href = `chart.html?relay=${encodeURIComponent(relayId)}`;
+            });
+
+            row.innerHTML = `
+              <td>${item.relay || relayId}</td>
+              <td>${item.name || "-"}</td>
+              <td>${item.status || "off"}</td>
+              <td>${item.consumption !== undefined ? item.consumption : "-"}</td>
+              <td>${item.totalKwh !== undefined ? item.totalKwh : "0.0000"}</td>
+              <td>${item.runtime !== undefined ? item.runtime : "0"}</td>
+            `;
+            const visualTd = document.createElement("td");
+            visualTd.appendChild(visualBtn);
+            row.appendChild(visualTd);
+
+            table.appendChild(row);
+          });
+        }
+      });
+    });
+  </script>
+</body>
+</html>

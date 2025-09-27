@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Appliance Timer</title>
+<style>
+/* Reset & base */
+* { box-sizing: border-box; margin:0; padding:0; }
+body { 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    background: linear-gradient(135deg,#1e3a8a,#3b82f6); 
+    color:white; 
+    display:flex; 
+    flex-direction:column; 
+    align-items:center; 
+    padding:30px 15px; 
+    min-height:100vh;
+}
+h1 {
+    margin-bottom:30px;
+    font-size:2rem;
+    text-shadow: 1px 1px 5px rgba(0,0,0,0.4);
+}
+
+/* Timer Toggle */
+label { 
+    display:flex; 
+    align-items:center; 
+    font-size:1.1rem; 
+    margin-bottom:30px;
+    cursor:pointer;
+}
+input[type="checkbox"] { 
+    margin-right:10px; 
+    width:20px; 
+    height:20px; 
+}
+
+/* Container */
+.container {
+    display:flex; 
+    flex-wrap:wrap; 
+    gap:20px; 
+    max-width:1000px; 
+    width:100%; 
+    justify-content:center;
+}
+
+/* Card Style */
+.card { 
+    background:rgba(255,255,255,0.08); 
+    padding:25px 20px; 
+    border-radius:16px; 
+    flex:0 0 280px; 
+    text-align:center; 
+    box-shadow:0 8px 20px rgba(0,0,0,0.3); 
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow:0 12px 30px rgba(0,0,0,0.5);
+}
+
+.card h3 {
+    margin-bottom:15px;
+    font-size:1.3rem;
+    color:#f3f4f6;
+}
+
+.card input {
+    width:70px; 
+    padding:8px; 
+    border-radius:8px; 
+    border:none; 
+    text-align:center; 
+    margin-bottom:12px; 
+    font-size:1rem;
+}
+
+/* Status display */
+.card div span {
+    font-weight:bold;
+    padding:3px 8px;
+    border-radius:6px;
+    background: rgba(0,0,0,0.2);
+    color:#f9fafb;
+}
+
+/* Button style */
+.card button {
+    padding:8px 16px; 
+    border:none; 
+    border-radius:8px; 
+    cursor:pointer; 
+    font-weight:bold; 
+    margin-top:8px; 
+    background:#10b981; 
+    color:white; 
+    font-size:1rem;
+    transition: background 0.2s;
+}
+.card button:hover { background:#059669; }
+.card button:disabled { background:rgba(16,185,129,0.5); cursor:not-allowed; }
+
+#timerToggle:checked + .container input,
+#timerToggle:checked + .container button { pointer-events:auto; }
+</style>
+</head>
+<body>
+
+<h1>Appliance Timer Settings</h1>
+<label><input type="checkbox" id="timerToggle"> Enable Timer Mode</label>
+
+<div class="container" id="relayContainer"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-auth.js";
+import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-database.js";
+
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyBKymhtFhKq9PDQnBetwcqgwpHSG8CZ26E",
+  authDomain: "prasactronics-b28eb.firebaseapp.com",
+  databaseURL: "https://prasactronics-b28eb-default-rtdb.firebaseio.com",
+  projectId: "prasactronics-b28eb",
+  storageBucket: "prasactronics-b28eb.firebasestorage.app",
+  messagingSenderId: "1022798223455",
+  appId: "1:1022798223455:web:d26fb82f59cf3ac318a3ea",
+  measurementId: "G-7ESX735R8F"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+const relayContainer = document.getElementById("relayContainer");
+const timerToggle = document.getElementById("timerToggle");
+
+let currentUser = null;
+const relays = ["relay1","relay2","relay3","relay4","relay5","relay6"];
+
+// Render relay cards
+function renderRelays(timerData={}){
+  relayContainer.innerHTML = "";
+  relays.forEach(relay=>{
+    const card = document.createElement("div");
+    card.className = "card";
+    const minutes = timerData[relay]?.minutes || "";
+    const active = timerData[relay]?.active || false;
+    card.innerHTML = `
+      <h3>${relay.toUpperCase()}</h3>
+      <input type="number" min="1" placeholder="Minutes" id="input-${relay}" value="${minutes}" ${!timerToggle.checked?"disabled":""}/>
+      <div>Status: <span id="status-${relay}">${active?"Running":"Idle"}</span></div>
+      <button id="start-${relay}" ${!timerToggle.checked?"disabled":""}>Start Timer</button>
+    `;
+    relayContainer.appendChild(card);
+
+    const startBtn = document.getElementById(`start-${relay}`);
+    const input = document.getElementById(`input-${relay}`);
+    const statusSpan = document.getElementById(`status-${relay}`);
+
+    startBtn.addEventListener("click", async ()=>{
+      const mins = parseFloat(input.value);
+      if(isNaN(mins)||mins<=0){ alert("Enter valid minutes"); return; }
+
+      // Store timer under the existing appliance path
+      const timerRef = ref(db, `users/${currentUser.uid}/appliances/${relay}/timer`);
+      await set(timerRef, { minutes: mins, startTime: Date.now(), active: true });
+
+      // Turn on the relay
+      const relayRef = ref(db, `users/${currentUser.uid}/appliances/${relay}`);
+      const relaySnap = await get(relayRef);
+      if(relaySnap.exists()){
+        const appl = relaySnap.val();
+        appl.status = "on";
+        appl.consumption = appl.consumption || 0;
+        await set(relayRef, appl);
+      }
+
+      statusSpan.textContent = "Running";
+
+      // Auto turn off after timer
+      setTimeout(async ()=>{
+        const relaySnap2 = await get(relayRef);
+        if(relaySnap2.exists()){
+          const appl = relaySnap2.val();
+          appl.status = "off";
+          appl.consumption = 0;
+          await set(relayRef, appl);
+        }
+        await set(timerRef, { minutes: 0, startTime: 0, active: false });
+        statusSpan.textContent = "Idle";
+      }, mins*60*1000);
+    });
+  });
+}
+
+// Timer toggle
+timerToggle.addEventListener("change", async ()=>{
+  const enabled = timerToggle.checked;
+  await set(ref(db, `users/${currentUser.uid}/timerEnabled`), enabled);
+  renderRelays(); // refresh input enabled/disabled
+});
+
+// Auth check
+onAuthStateChanged(auth,user=>{
+  if(user){
+    currentUser=user;
+    // Load timers
+    onValue(ref(db,`users/${user.uid}/appliances`), snap=>{
+      const data = {};
+      if(snap.exists()){
+        const appls = snap.val();
+        relays.forEach(r=>{
+          data[r] = appls[r]?.timer || {minutes:0,active:false};
+        });
+      }
+      renderRelays(data);
+    });
+    // Load timer enabled state
+    get(ref(db,`users/${user.uid}/timerEnabled`)).then(snap=>{
+      timerToggle.checked = snap.exists()?snap.val():false;
+    });
+  } else {
+    window.location.href="signin.html";
+  }
+});
+</script>
+</body>
+</html>
